@@ -21,11 +21,10 @@ class Pipeline(queue.Queue):
     def __str__(self):
         return "pipeline_"+self.name
         
-        
 #Communicator class
 class Communicator(object):
     
-    def __init__ (self,con_type:str,con_dir:str,buffer_size_out:int,buffer_size_inp:int=0):
+    def __init__ (self,con_type:str,con_dir:str,buffer_size_out:int,buffer_size_inp:int=0,simulation = False):
         
         self.con_type = con_type
         self.con_dir = con_dir
@@ -44,7 +43,7 @@ class Communicator(object):
             raise ValueError("Communication direction must be 'inp'/'out'/'both'")
         #Real communication module, which depends of communication partner and choose proper library
         #TODO
-        self.comm_module = object
+        self.comm_module = object #TODO
         
         #Threading object
         self.executor = ThreadPoolExecutor(max_workers=2)
@@ -53,55 +52,84 @@ class Communicator(object):
         self.set_data_lock = threading.Lock()
         self.get_data_lock = threading.Lock()
         
+        #Theading events to stop/start communication
+        self.event_out_start = threading.Event()
+        self.event_inp_start = threading.Event()
+        
+        #Simulation block
+        self.simulation = simulation
+        self.sim_recv_cnt = 0 #receive counter simulation
         
         logging.info("Communicator %s with %s direction: created",con_type,con_dir)
         
     def __send_data(self,data) -> int:
         logging.debug("Communicator %s: __send_data: preparing for send",self.con_type)
         code_result = 0
-        #Send data simulation
-        time.sleep(2)
-        logging.debug("Communicator %s: __send_data: data sent",self.con_type)
+        
+        if self.simulation:
+            time.sleep(2) #Simulation
+            code_result = True #Simulation
+        else:
+            logging.debug("Communicator %s: __send_data: Program stopped TODO",self.con_type)
+            raise ValueError("TODO")
+            #TODO
         return code_result
     
     def __recieve_data(self) -> (str,int):
         logging.debug("Communicator %s: __recieve_data: preparing for recieve",self.con_type)
         code_result = False
-        #Recieve data simulation
-        data = "Simulated message from PLC"
-        code_result = True
-        time.sleep(1)
-        logging.debug("Communicator %s: __recieve_data: data recieved",self.con_type)
+        
+        if self.simulation:
+            #Recieve data simulation
+            data = "Simulated message from PLC #"+str(self.sim_recv_cnt) #Simulation
+            self.sim_recv_cnt += 1 #Simulation
+            code_result = True #Simulation
+            time.sleep(1)
+        else:
+            logging.debug("Communicator %s: __recieve_data: Program stopped TODO",self.con_type)
+            raise ValueError("TODO")
+            #TODO
+        
+        
         return data,code_result
     
     def __get_data_from_buffer(self,pipeline) -> object:
-        logging.debug("Communicator %s: __get_data_from_buffer: trying to get data",self.con_type)
+        #logging.debug("Communicator %s: __get_data_from_buffer: trying to get data",self.con_type)
         value = pipeline.get(block=False)
-        logging.debug("Communicator %s: __get_data_from_buffer: get data ok",self.con_type)
+        logging.debug("Communicator %s: __get_data_from_buffer: get data from %s ok",self.con_type,pipeline)
         return value
 
     def __set_data_to_buffer(self,pipeline,value):
-        logging.debug("Communicator %s: __set_data_to_buffer: trying to set data to %s",self.con_type,pipeline)
+        #logging.debug("Communicator %s: __set_data_to_buffer: trying to set data to %s",self.con_type,pipeline)
         pipeline.put(value,block=False)
         logging.debug("Communicator %s: __set_data_to_buffer: set data ok to %s",self.con_type,pipeline)
     
-    def __thread_update_inp_buffer(self,pipeline):
+    def __thread_update_inp_buffer(self,pipeline,run_event):
         k = 0
-        while k<10:
-            #temprorary delay
-            k = k + 1
+        logging.debug("Communicator %s: __thread_update_inp_buffer: checking communication event",self.con_type)
+        while run_event.is_set():
             logging.debug("Communicator %s: __thread_update_inp_buffer: trying to recieve data",self.con_type)
             data,code_result = self.__recieve_data() 
-            #for test
-            data = data+" #"+str(k)
             #result put to buffer
             if code_result:
-                logging.debug("Communicator %s: __thread_update_inp_buffer: recieved data ok",self.con_type)
+                logging.debug("Communicator %s: __thread_update_inp_buffer: recieved data %s",self.con_type,data)
                 self.__set_data_to_buffer(pipeline,data)
             else:
                 logging.debug("Communicator %s: __thread_update_inp_buffer: no data recieved yet",self.con_type)
-                pass
         
+        logging.info("Communicator %s: __thread_update_inp_buffer: stop communication event",self.con_type)
+            
+    def __thread_update_out_buffer(self,pipeline,run_event):
+        while run_event.is_set():
+            _comm_ready = True #TMP
+            if _comm_ready and not pipeline.empty():
+                logging.debug("Communicator %s: __thread_update_out_buffer: trying to send data",self.con_type)
+                code_result = self.__send_data(self.__get_data_from_buffer(pipeline))
+                if code_result:
+                    logging.debug("Communicator %s: __thread_update_out_buffer: data send ok",self.con_type)
+                else:
+                    logging.warning("Communicator %s: __thread_update_out_buffer: error sending data",self.con_type)
+        logging.info("Communicator %s: __thread_update_out_buffer: stop communication event",self.con_type)
     
     def set_data(self,data) -> True:
         logging.debug("Communicator %s: set_data: trying to add data to %s",self.con_type,self.pipeline_out)
@@ -114,7 +142,7 @@ class Communicator(object):
             code_result = True
             logging.info("Communicator %s: set_data: add data to %s ok",self.con_type,self.pipeline_out)
         else:
-            logging.info("Communicator %s: set_data: not added, %s is full",self.con_type,self.pipeline_out)
+            logging.warning("Communicator %s: set_data: not added, %s is full",self.con_type,self.pipeline_out)
         #release operation for multithreading access
         self.set_data_lock.release()
         return code_result
@@ -130,7 +158,7 @@ class Communicator(object):
         if not self.pipeline_inp.empty():
             data = self.__get_data_from_buffer(self.pipeline_inp)
             code_result = True
-            logging.info("Communicator %s: get_data: get data from %s ok",self.con_type,self.pipeline_inp)
+            logging.info("Communicator %s: get_data: get data from %s ok: %s",self.con_type,self.pipeline_inp, data)
         else:
             logging.info("Communicator %s: get_data: no data, %s is empty",self.con_type,self.pipeline_inp)
         #release operation for multithreading access
@@ -158,21 +186,31 @@ class Communicator(object):
         return result
     
     def start_communication(self) -> None:
-        #with concurrent.futures.ThreadPoolExecutor(max_workers=1) as self.executor:
-        logging.debug("Communicator %s: start_communication: try to start treading")
-        self.executor.submit(self.__thread_update_inp_buffer, self.pipeline_inp)
-        logging.debug("Communicator %s: start_communication: threading started ok") 
-        logging.debug("Communicator %s: start_communication: trying to stop threading")
-        self.executor.shutdown(wait=False)
-        logging.debug("Communicator %s: start_communication: threading stopped??")
+        logging.debug("Communicator %s: start_communication: try to start communication treading",self.con_type)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as self.executor: #self.executor
+            #set communication on events
+            self.event_inp_start.set() #start inp communication
+            self.event_out_start.set() #start out communication
+            #this thread updated incoming communication buffer
+            self.executor.submit(self.__thread_update_inp_buffer, self.pipeline_inp,self.event_inp_start)  
+            #this thread updated outcoming communication buffer
+            self.executor.submit(self.__thread_update_out_buffer, self.pipeline_out,self.event_out_start)
+        logging.debug("Communicator %s: start_communication: communicagion threading started ok") 
+        
+        
     def stop_communication(self):
-        self.executor.shutdown(wait=False)
+        logging.debug("Communicator %s: start_communication: trying to stop threading")
+        self.event_inp_start.clear() #stop inp communication
+        self.event_out_start.clear() #stop out communication
+        self.executor.shutdown(wait=True)
+        logging.debug("Communicator %s: start_communication: threading stopped??")
     
-plc_comm =  Communicator("PLC","both",10,10)
+plc_comm =  Communicator("PLC","both",10,10,simulation = True)
 #plc_comm.set_data("Message1 to be sent")
 #plc_comm.set_data("Message2 to be sent")
 #plc_comm.get_out_buff_count()
 #plc_comm.get_data()
 #plc_comm.get_inp_buff_count()
 plc_comm.start_communication()
-#plc_comm.stop_communication()
+time.sleep(5)
+plc_comm.get_data()
