@@ -1,11 +1,4 @@
-import select
-import socket 
-import sys 
-import queue
-import re
-import threading
-import logging
-import concurrent.futures
+from .imports import *
 from concurrent.futures.thread import ThreadPoolExecutor
 
 #static paramenters
@@ -55,8 +48,9 @@ class CommModuleSocketTcp(object):
         #initialistation of sockets
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
             server.setblocking(0)
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)
             server.bind((self.HOST, self.PORT))
-            server.listen(self.listen_backlog)#.listen(5)
+            server.listen(self.listen_backlog)
             logging.debug("Communication module %s: starting server...",self.name)
             #data exchange parameters
             inputs = [server]
@@ -251,7 +245,7 @@ class CommModuleSocketTcp(object):
             if (partner in self.partners_dict) or (partner==self.PARTNERS_ALL):
                 try:
                     self.all_message_queues_out.put_nowait(partner_data) 
-                    logging.debug("Communication module %s: send_data: data added to main output buffer",self.name)
+                    logging.debug("Communication module %s: send_data: data to '%s' added to main output buffer",self.name,partner)
                 except queue.Full:
                     logging.warning("Communication module %s: send_data: main %s output buffer full",self.name)
             else:
