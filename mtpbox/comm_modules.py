@@ -202,6 +202,7 @@ class CommModuleSocketTcp(object):
                     
                 #update partners list (readonly):
                 self.partners = list(self.partners_dict.keys())
+                
             #stopping server: close all active connections:
             for pn,pc in self.partners_dict.items():
                 logging.warning("Communication module %s: closing connection %s",self.name,pn)
@@ -234,35 +235,37 @@ class CommModuleSocketTcp(object):
                 logging.debug("Communication module %s: recieve_data: no partner '%s' found",self.name,partner)
                 data = None
         return data
-
         
-    def send_data(self,partner_data):
-        #check telegram structure tuple: (partner,data)
-        if type(partner_data)==tuple and len(partner_data)==2:
-            #check if partner exist
-            partner = partner_data[0]
-            data = partner_data[1]
-            if (partner in self.partners_dict) or (partner==self.PARTNERS_ALL):
-                try:
-                    self.all_message_queues_out.put_nowait(partner_data) 
-                    logging.debug("Communication module %s: send_data: data to '%s' added to main output buffer",self.name,partner)
-                except queue.Full:
-                    logging.warning("Communication module %s: send_data: main %s output buffer full",self.name)
-            else:
-                logging.warning("Communication module %s: send_data: no partner '%s' found",self.name,partner)
+    def send_data(self,data,partner=TCP_PARTNERS_ALL):
+        result = False
+        #check partner
+        if (partner in self.partners_dict) or (partner==TCP_PARTNERS_ALL):
+            try:
+                self.all_message_queues_out.put_nowait((partner,data)) 
+                result = True
+                logging.debug("Communication module %s: send_data: data to '%s' added to main output buffer",self.name,partner)
+            except queue.Full:
+                logging.warning("Communication module %s: send_data: main %s output buffer full",self.name)
         else:
-            logging.warning("Communication module %s: send_data: telegram structure doesn't fit requirements",self.name)
+            logging.warning("Communication module %s: send_data: no partner '%s' found",self.name,partner)
     
     #get communication partners list
     def get_partners(self):
         return self.partners
     
-    #remove partner from communication
-    def remove_partner(self,partner):
-        if partner in self.partners_dict:
-            self.partners_dict.pop(partner,None)
-            logging.info("Communication module %s: remove_partner: partner '%s' removed from communication list",self.name,partner)
-        
+    #remove partner from communication. Remove partner by filter ^0.0.0.0.0000 or ^0.0.0.0 ^0
+    def remove_partner(self,partner=TCP_PARTNERS_ALL):
+        partners_to_remove = []
+        if partner == TCP_PARTNERS_ALL: #delete all partners
+            partners_to_remove = list(self.partners_dict.keys())
+        else:
+            for k,v in self.partners_dict.items():
+                if re.search("^"+partner, k):
+                    partners_to_remove.append(k)  
+                    
+        for v in partners_to_remove:
+            self.partners_dict.pop(v,None)
+            logging.info("Communication module %s: remove_partner: partner '%s' removed from communication list",self.name,v)
     
     #set communication partners filter
     def set_partners_filter(self,partners_filter):

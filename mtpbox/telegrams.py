@@ -37,7 +37,7 @@ class Telegram(Struct):
         #binding communication_module
         self.comm_module = comm_module #CommModuleSocketTcp class
         if not self.comm_module:
-            logging.warning("Telegram %s: no communication module set",telegram_name)
+            logging.warning("Telegram %s: no communication module set. NOT USED NOW",telegram_name)
             
         #length check
         if self.len_val == 0:
